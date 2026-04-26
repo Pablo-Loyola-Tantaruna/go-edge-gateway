@@ -1,0 +1,23 @@
+deployment:
+  replicas:
+    min: 2
+    max: 5
+  resources_plan:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+    replicas:
+      min: 1
+      max: 3
+  hpa:
+    enabled: false
+    cpu_target: 70
+  probes:
+    liveness: "/health"
+    readiness: "/health"
+  config:
+    source: "go-edge-gateway"
+    use_vault: true

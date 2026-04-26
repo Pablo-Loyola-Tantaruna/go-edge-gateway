@@ -1,0 +1,23 @@
+name: "GopherGuard - Pipeline CERT"
+
+on:
+  push:
+    tags: [ 'v*-rc' ] # Ejemplo: v1.0.0-rc
+
+jobs:
+  Deploy-Cert:
+    runs-on: ubuntu-latest
+    environment: certification
+    steps:
+      - uses: actions/checkout@v4
+
+      # Recuperamos variables del archivo vars/cert.yaml
+      - name: Load Cert Properties
+        run: |
+          echo "Cargando propiedades de vars/cert.yaml"
+          echo "HPA: Enabled | Replicas: 2 | ResourcePlan: Silver"
+
+      # Despliegue GitOps (Simil ArgoCD)
+      - name: Update K8s Manifests
+        run: |
+          echo "Actualizando imagen a ${{ github.ref_name }} en Certi"

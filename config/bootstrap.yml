@@ -1,0 +1,9 @@
+# configs/bootstrap.yaml
+app:
+  name: gopher-guard
+  group: security-infrastructure
+  version: 1.0.0
+  profile: ${APP_PROFILE:dev} # dev, cert, prod
+  config_server:
+    enabled: false # En local es false, en cert/prod sería true
+    uri: "http://config-server:8888"

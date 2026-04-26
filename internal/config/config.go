@@ -29,9 +29,16 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	err = yaml.Unmarshal(file, conf)
+	if err != nil {
+		return nil, err
+	}
+
+	if envSecret := os.Getenv("GOPHER_JWT_SECRET"); envSecret != "" {
+		log.Println("Secreto JWT cargado desde el entorno")
+	}
+
 	return conf, err
 }
-
 func WatchConfig(path string, onChange func(*Config)) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

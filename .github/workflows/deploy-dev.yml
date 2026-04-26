@@ -1,0 +1,43 @@
+name: "GopherGuard - Pipeline DEV"
+
+on:
+  push:
+    branches: [ develop, 'feature/*' ]
+
+jobs:
+  Quality-and-Build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # STAGE 1: Build & Unit Test
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Build & Test
+        run: |
+          go mod tidy
+          go build -o bin/gateway cmd/server/main.go
+          go test -v ./...
+
+      # STAGE 2: Static Analysis (Simil SonarQube)
+      - name: Sonar/Lint Analysis
+        uses: golangci/golangci-lint-action@v3
+
+      # STAGE 3: Security Scan (Simil Fortify - SAST)
+      - name: Gosec Security Scan
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec ./...
+
+      # STAGE 4: Dependency Scan (Simil X-Ray - SCA)
+      - name: Trivy Dependency Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          severity: 'CRITICAL,HIGH'
+
+      # STAGE 5: Docker Artifact (JFrog Simil)
+      - name: Build Docker Image
+        run: docker build -t gopherguard:dev-${{ github.sha }} .

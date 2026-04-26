@@ -1,0 +1,6 @@
+server:
+  port: 80
+  health_check_interval: "30s"
+backends:
+  - url: "http://api-service-1.internal"
+  - url: "http://api-service-2.internal"

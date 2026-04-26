@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"time"
 
 	metrics "github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal"
@@ -21,7 +22,19 @@ import (
 
 func main() {
 
-	cfg, err := config.LoadConfig("config.yaml")
+	b := config.InitBootstrap()
+	log.Printf("Iniciando %s en ambiente: %s", b.AppName, b.Environment)
+
+	cfg, err := config.LoadConfig(b.ConfigPath)
+
+	jwtSecret := os.Getenv("GOPHER_JWT_SECRET")
+	if jwtSecret == "" {
+		if b.Environment == "prod" {
+			log.Fatal("CRITICAL: JWT_SECRET no encontrado en PROD")
+		}
+		jwtSecret = "dev_secret"
+	}
+
 	if err != nil {
 		log.Fatalf("Error cargando configuración: %v", err)
 	}
@@ -95,7 +108,6 @@ func main() {
 	})
 
 	limiter := middleware.NewIPRateLimiter(5, 10)
-	jwtSecret := "tu_super_secreto_para_12k_soles"
 
 	authHandler := middleware.JWTMiddleware(jwtSecret, originHandler)
 	limiterHandler := middleware.RateLimitMiddleware(limiter, authHandler)
