@@ -19,6 +19,11 @@ func (s *ServerPool) GetNextIndex() int {
 	return int(atomic.AddUint64(&s.Current, uint64(1)) % uint64(len(s.Backends)))
 }
 
+func (s *ServerPool) GetNextPeerAfterFailure() *models.Backend {
+
+	return s.GetNextPeer()
+}
+
 func (s *ServerPool) GetNextPeer() *models.Backend {
 	next := s.GetNextIndex()
 	l := len(s.Backends) + next

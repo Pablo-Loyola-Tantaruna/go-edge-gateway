@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/balancer"
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/config"
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/health"
+	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/proxy"
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/pkg/models"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -27,13 +29,34 @@ func main() {
 
 	for _, b := range cfg.Backends {
 		serverURL, _ := url.Parse(b.URL)
-		proxy := httputil.NewSingleHostReverseProxy(serverURL)
+		proxyBackend := httputil.NewSingleHostReverseProxy(serverURL)
 
 		pool.AddBackend(&models.Backend{
 			URL:          serverURL,
 			Alive:        true,
-			ReverseProxy: proxy,
+			ReverseProxy: proxyBackend,
 		})
+		proxyBackend.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf("Error conectando al backend %s: %v. Reintentando...", serverURL.Host, err)
+
+			retries := proxy.GetRetryFromContext(r)
+
+			if retries < 3 {
+				log.Printf("Fallo en backend %s. Reintento %d/3", serverURL.Host, retries+1)
+
+				p := pool.GetNextPeer()
+				p.SetAlive(false)
+				nextPeer := pool.GetNextPeerAfterFailure()
+
+				if nextPeer != nil {
+
+					r = proxy.SetRetryInContext(r, retries+1)
+					nextPeer.ReverseProxy.ServeHTTP(w, r)
+					return
+				}
+			}
+			http.Error(w, "Servicio no disponible (No backends alive)", http.StatusServiceUnavailable)
+		}
 	}
 
 	go health.HealthCheck(pool)
@@ -41,6 +64,12 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	originHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		r = r.WithContext(ctx)
+
 		peer := pool.GetNextPeer()
 
 		if peer != nil {
@@ -50,13 +79,13 @@ func main() {
 
 		http.Error(w, "Servicio no disponible (No backends alive)", http.StatusServiceUnavailable)
 	})
-	
+
 	server := http.Server{
 		Addr:    addr,
 		Handler: Logger(originHandler),
 	}
 
-	log.Printf("🚀 GopherGuard iniciado en el puerto %s", addr)
+	log.Printf("GopherGuard iniciado en el puerto %s", addr)
 	log.Fatal(server.ListenAndServe())
 }
 
