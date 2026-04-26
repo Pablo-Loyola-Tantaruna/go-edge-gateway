@@ -44,14 +44,11 @@ func main() {
 			retries := proxy.GetRetryFromContext(r)
 
 			if retries < 3 {
-				log.Printf("Fallo en backend %s. Reintento %d/3", serverURL.Host, retries+1)
 
-				p := pool.GetNextPeer()
-				p.SetAlive(false)
+				log.Printf("Fallo en backend %s. Reintento %d/3", serverURL.Host, retries+1)
 				nextPeer := pool.GetNextPeerAfterFailure()
 
 				if nextPeer != nil {
-
 					r = proxy.SetRetryInContext(r, retries+1)
 					nextPeer.ReverseProxy.ServeHTTP(w, r)
 					return
@@ -60,6 +57,21 @@ func main() {
 			http.Error(w, "Servicio no disponible (No backends alive)", http.StatusServiceUnavailable)
 		}
 	}
+	config.WatchConfig("config.yaml", func(newCfg *config.Config) {
+		var newBackends []*models.Backend
+		for _, b := range newCfg.Backends {
+			serverURL, _ := url.Parse(b.URL)
+			proxyBackend := httputil.NewSingleHostReverseProxy(serverURL)
+
+			newBackends = append(newBackends, &models.Backend{
+				URL:          serverURL,
+				Alive:        true,
+				ReverseProxy: proxyBackend,
+			})
+		}
+		pool.UpdateBackends(newBackends)
+		log.Printf(" Configuración actualizada: %d servidores activos", len(newBackends))
+	})
 
 	go health.HealthCheck(pool)
 	http.Handle("/metrics", promhttp.Handler())

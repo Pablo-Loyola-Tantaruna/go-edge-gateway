@@ -1,8 +1,10 @@
 package config
 
 import (
+	"log"
 	"os"
 
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,4 +30,41 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	err = yaml.Unmarshal(file, conf)
 	return conf, err
+}
+
+func WatchConfig(path string, onChange func(*Config)) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Has(fsnotify.Write) {
+					log.Println("Detectado cambio en config.yaml, recargando...")
+					newCfg, err := LoadConfig(path)
+					if err == nil {
+						onChange(newCfg)
+					} else {
+						log.Printf("Error al recargar configuración: %v", err)
+					}
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println("error:", err)
+			}
+		}
+	}()
+
+	err = watcher.Add(path)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
