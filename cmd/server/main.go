@@ -14,6 +14,7 @@ import (
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/config"
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/health"
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/proxy"
+	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/internal/proxy/middleware"
 	"github.com/Pablo-Loyola-Tantaruna/go-edge-gateway/pkg/models"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -36,6 +37,7 @@ func main() {
 			Alive:        true,
 			ReverseProxy: proxyBackend,
 		})
+
 		proxyBackend.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("Error conectando al backend %s: %v. Reintentando...", serverURL.Host, err)
 
@@ -80,9 +82,16 @@ func main() {
 		http.Error(w, "Servicio no disponible (No backends alive)", http.StatusServiceUnavailable)
 	})
 
+	limiter := middleware.NewIPRateLimiter(5, 10)
+	jwtSecret := "tu_super_secreto_para_12k_soles"
+
+	authHandler := middleware.JWTMiddleware(jwtSecret, originHandler)
+	limiterHandler := middleware.RateLimitMiddleware(limiter, authHandler)
+	finalHandler := Logger(limiterHandler)
+
 	server := http.Server{
 		Addr:    addr,
-		Handler: Logger(originHandler),
+		Handler: finalHandler,
 	}
 
 	log.Printf("GopherGuard iniciado en el puerto %s", addr)
@@ -93,13 +102,20 @@ func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
+		reqID := r.Header.Get("X-Request-ID")
+		if reqID == "" {
+			reqID = fmt.Sprintf("%d", time.Now().UnixNano())
+			r.Header.Set("X-Request-ID", reqID)
+		}
+
+		w.Header().Set("X-Request-ID", reqID)
+
 		next.ServeHTTP(w, r)
 
 		duration := time.Since(start).Seconds()
-
 		metrics.HttpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, "200").Inc()
 		metrics.RequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(duration)
 
-		log.Printf("Método: %s | Ruta: %s | Duración: %v", r.Method, r.URL.Path, time.Since(start))
+		log.Printf("[%s] %s %s | Duración: %v", reqID, r.Method, r.URL.Path, time.Since(start))
 	})
 }
